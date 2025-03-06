@@ -1,6 +1,8 @@
-const pool = require("./config/db");
+const express = require("express");
+const pool = require("../config/db");
+const router = express.Router();
 
-// Middleware for å sjekke om bruker er innlogget
+// Middleware for checking if the user is logged in
 const isLoggedIn = (req, res, next) => {
   if (req.session.user) {
     return next();
@@ -9,7 +11,7 @@ const isLoggedIn = (req, res, next) => {
   }
 };
 
-// Middleware for å sjekke om bruker er admin
+// Middleware for checking if the user is an admin
 const isAdmin = (req, res, next) => {
   if (req.session.user && req.session.user.rolle === "admin") {
     return next();
@@ -18,39 +20,64 @@ const isAdmin = (req, res, next) => {
   }
 };
 
-// 🔹 Innlogging (uten hashing)
-app.post("/login", async (req, res) => {
+// Login route
+router.post("/login", async (req, res) => {
+  console.log("Request body:", req.body); // Log the request body
   const { navn, passord } = req.body;
+
+  // Validate request body
+  if (!navn || !passord) {
+    return res.status(400).send("Username and password are required");
+  }
+
   try {
+    console.log("Querying database for user:", navn); // Log the username
     const [user] = await pool.query(
       "SELECT * FROM mydb.medlem WHERE navn = ?",
       [navn]
     );
-    if (user.length === 0) return res.status(404).send("User not found");
+    console.log("Database result:", user); // Log the database result
 
-    if (user[0].passord !== passord)
+    if (user.length === 0) {
+      console.log("User not found"); // Log if user is not found
+      return res.status(404).send("User not found");
+    }
+
+    if (user[0].passord !== passord) {
+      console.log("Invalid password"); // Log if password is invalid
       return res.status(400).send("Invalid password");
+    }
 
+    // Set user info in session
+    req.session.user = {
+      medlem_id: user[0].medlem_id,
+      navn: user[0].navn,
+      rolle: user[0].rolle,
+    };
+
+    console.log("Session after login:", req.session);
+
+    console.log("Login successful"); // Log successful login
     return res.status(200).send("Login successful");
   } catch (error) {
-    console.error(error);
+    console.error("Login error:", error); // Log the error
     return res.status(500).send("Internal server error");
   }
 });
 
-// 🔹 Hent informasjon om innlogget medlem + MC-info
-app.get("/me", isLoggedIn, async (req, res) => {
+// Get current user info
+router.get("/me", isLoggedIn, async (req, res) => {
   try {
     const { medlem_id } = req.session.user;
     const [result] = await pool.query(
       `
-        SELECT M.medlem_id, M.navn, A.adresse, A.postnummer, 
-               Mo.registreringsnummer, Mo.mc_type, Mo.produsent
-        FROM Medlem M
-        JOIN Adresse A ON M.adresse_id = A.adresse_id
-        LEFT JOIN Motorsykkel Mo ON M.medlem_id = Mo.medlem_id
-        WHERE M.medlem_id = ?
-      `,
+          SELECT M.medlem_id, M.navn, A.adresse, A.postnummer, 
+                 Mo.registreringsnummer, Mo.mc_type, Mo.produsent
+          FROM Medlem M
+          JOIN Adresse A ON M.adresse_id = A.adresse_id
+          LEFT JOIN Motorsykkel Mo ON M.medlem_id = Mo.medlem_id
+          WHERE M.medlem_id = ?
+        `,
       [medlem_id]
     );
 
@@ -63,8 +90,8 @@ app.get("/me", isLoggedIn, async (req, res) => {
   }
 });
 
-// 🔹 Hent alle medlemmer (kun for admin)
-app.get("/members", isAdmin, async (req, res) => {
+// Get all members (admin only)
+router.get("/members", isAdmin, async (req, res) => {
   try {
     const [result] = await pool.query(`
         SELECT M.medlem_id, M.navn, A.adresse, A.postnummer,
@@ -83,8 +110,8 @@ app.get("/members", isAdmin, async (req, res) => {
   }
 });
 
-// 🔹 Opprett nytt medlem eller admin (kun admin kan gjøre dette)
-app.post("/create-user", isAdmin, async (req, res) => {
+// Create a new user (admin only)
+router.post("/create-user", isAdmin, async (req, res) => {
   const { navn, passord, rolle, adresse_id } = req.body;
 
   if (!["medlem", "admin"].includes(rolle)) {
@@ -93,7 +120,7 @@ app.post("/create-user", isAdmin, async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "INSERT INTO Medlem (navn, passord, rolle, adresse_id) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO Medlem (navn, passord, rolle, adresse_id) VALUES (?, ?, ?, ?)",
       [navn, passord, rolle, adresse_id]
     );
 
@@ -104,8 +131,8 @@ app.post("/create-user", isAdmin, async (req, res) => {
   }
 });
 
-// 🔹 Logg ut bruker
-app.post("/logout", (req, res) => {
+// Logout route
+router.post("/logout", (req, res) => {
   req.session.destroy((err) => {
     if (err) {
       return res.status(500).send("Error logging out");
@@ -113,3 +140,5 @@ app.post("/logout", (req, res) => {
     res.status(200).send("Logged out successfully");
   });
 });
+
+module.exports = router;

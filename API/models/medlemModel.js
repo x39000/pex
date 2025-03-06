@@ -3,7 +3,7 @@ const pool = require("../config/db");
 async function getAllMembers(req, res) {
   try {
     const [result] = await pool.query(`
-      SELECT M.medlem_id, M.navn, A.adresse, A.postnummer
+      SELECT M.medlem_id, M.navn, M.passord, A.adresse, A.postnummer
       FROM Medlem M
       JOIN Adresse A ON M.adresse_id = A.adresse_id
     `);
@@ -44,7 +44,7 @@ async function getMemberById(req, res) {
 }
 
 async function addMember(req, res) {
-  const { navn, email, passord, adresse_id } = req.body;
+  const { navn, passord, adresse_id } = req.body;
   try {
     const result = await pool.query(
       "INSERT INTO Medlem (navn, adresse_id) VALUES (?, 'medlem', ?)",
